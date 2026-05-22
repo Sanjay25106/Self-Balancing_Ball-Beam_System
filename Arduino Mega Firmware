@@ -1,0 +1,50 @@
+#include <Servo.h>
+
+Servo myservo;
+
+const int DC = 93;
+const int MAX_ANGLE = 6;
+const unsigned long RATE_MS = 10; // Corresponds to 100Hz sequential loop tracking
+
+int ServoPos = DC;
+int lastAngle = DC;
+unsigned long lastTime = 0;
+
+void setup() {
+  Serial.begin(115200);
+  myservo.attach(9);
+  myservo.write(DC);
+  delay(2000);
+  lastTime = millis();
+}
+
+void loop() {
+  // Enforce timing window
+  if (millis() - lastTime < RATE_MS) return;
+  lastTime = millis();
+
+  // Clear older buffer bloat packets to avoid latency buildup
+  while (Serial.available() > 1) Serial.read();
+
+  // Master-slave Handshake trigger
+  Serial.write('!');
+  
+  unsigned long waitStart = millis();
+  while (Serial.available() < 1) {
+    // Fail-safe protection: if transmission hangs over 50ms, maintain last position
+    if (millis() - waitStart > 50) {
+      myservo.write(lastAngle);
+      return;
+    }
+  }
+
+  // Process verified incoming configuration packet
+  ServoPos = Serial.read();
+  ServoPos = constrain(ServoPos, DC - MAX_ANGLE, DC + MAX_ANGLE);
+
+  // Actuate only if physical target configuration shifted
+  if (ServoPos != lastAngle) {
+    myservo.write(ServoPos);
+    lastAngle = ServoPos;
+  }
+}
